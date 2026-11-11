@@ -3,11 +3,10 @@
   var STORAGE_KEY = "chageun-obsidian-v1";
   var COURSE = window.COURSE;
 
-  var activeStorageKey = STORAGE_KEY;
-  var syncNeedsRender = false;
+  // ponytail: localStorage only; swap to Firestore when Firebase project exists
   function save(state) {
     try {
-      localStorage.setItem(activeStorageKey, JSON.stringify(state));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
       storageNotice('');
       return true;
     } catch (e) {
@@ -23,7 +22,7 @@
 
   function load() {
     try {
-      var raw = localStorage.getItem(activeStorageKey);
+      var raw = localStorage.getItem(STORAGE_KEY);
       if (!raw) return { last: null, lessons: {} };
       return parseBackup(raw);
     } catch (e) {
@@ -38,11 +37,9 @@
   }
 
   function setLessonState(id, patch) {
-    var before = JSON.parse(JSON.stringify(state));
     var cur = getLessonState(id);
     state.lessons[id] = Object.assign({}, cur, patch);
     save(state);
-    if (window.StudySync) window.StudySync.changed(before, state);
   }
 
   function lessonStatus(id) {
@@ -103,7 +100,7 @@
   // --- 홈 ---
   function renderHome(root) {
     root.appendChild(el("h1", { text: COURSE.title }));
-    root.appendChild(el("p", { class: "note", text: "진도와 메모는 이 브라우저에 저장됩니다. 기기 간 동기화의 연결 상태는 위 메뉴에서 확인할 수 있습니다." }));
+    root.appendChild(el("p", { class: "note", text: "진도와 메모는 이 브라우저에 저장됩니다. 다른 기기로 옮길 때는 내 기록의 JSON 백업·복원을 사용하세요." }));
 
     var hasRecord = !!(state.last && findLesson(state.last));
     var startId = hasRecord ? state.last : COURSE.lessons[0].id;
@@ -612,7 +609,7 @@
 
   function renderNotes(root) {
     root.appendChild(el('h1', { text: '내 학습 기록' }));
-    root.appendChild(el('p', { class: 'note', text: '체크와 메모는 이 브라우저에 저장되며, 동기화에 로그인하면 같은 계정의 다른 기기와 공유됩니다. 연결 전에는 JSON 백업으로 옮길 수 있습니다. Markdown 파일은 읽기·보관용이며 복원할 수 없습니다.' }));
+    root.appendChild(el('p', { class: 'note', text: '체크와 메모는 현재 브라우저에 저장됩니다. 다른 기기로 옮길 때는 JSON 백업을 받고 복원하세요. Markdown 파일은 읽기·보관용이며 복원할 수 없습니다.' }));
     var row = el('div', { class: 'btn-row' });
     row.appendChild(el('button', { type: 'button', text: '학습 기록 Markdown 받기', onclick: function () {
       download('옵시디언-학습기록-' + today() + '.md', exportNotes(), 'text/markdown');
@@ -647,9 +644,7 @@
         buttons.appendChild(el('button', { type: 'button', text: '이 백업으로 현재 기록 교체', onclick: function () {
           if (!pending) return;
           if (!save(pending)) { status.textContent = '저장하지 못해 복원하지 않았습니다. 브라우저 저장 공간을 확인해 주세요.'; return; }
-          var beforeRestore = state;
           state = pending;
-          if (window.StudySync) window.StudySync.changed(beforeRestore, state);
           pending = null;
           renderNotesAfterRestore();
         } }));
@@ -736,40 +731,6 @@
   }
 
 
-  function refreshFromSync() {
-    var focused = document.activeElement;
-    if ((focused && (focused.tagName === 'TEXTAREA' || focused.tagName === 'INPUT')) ||
-        document.querySelector('.restore-panel input[type=file]')?.files?.length) {
-      syncNeedsRender = true;
-      return;
-    }
-    var y = window.scrollY;
-    router();
-    window.scrollTo(0, y);
-    syncNeedsRender = false;
-  }
-
-  function setupSync() {
-    if (!window.StudySync) return;
-    window.StudySync.start({
-      parse: parseBackup,
-      switchAccount: function (uid) {
-        activeStorageKey = uid ? STORAGE_KEY + ':user:' + uid : STORAGE_KEY;
-        state = load();
-        router();
-      },
-      apply: function (remote) {
-        if (JSON.stringify(state.lessons) === JSON.stringify(remote.lessons)) return;
-        state = { last: state.last, lessons: remote.lessons };
-        save(state);
-        refreshFromSync();
-      }
-    });
-    document.addEventListener('focusout', function () {
-      if (syncNeedsRender) setTimeout(refreshFromSync, 0);
-    });
-  }
-
   // --- 라우터 ---
   function router() {
     var root = document.getElementById("app");
@@ -790,5 +751,5 @@
   }
 
   window.addEventListener("hashchange", router);
-  window.addEventListener("DOMContentLoaded", function () { router(); setupSync(); });
+  window.addEventListener("DOMContentLoaded", router);
 })();
