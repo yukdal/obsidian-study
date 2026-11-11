@@ -3,10 +3,11 @@
   var STORAGE_KEY = "chageun-obsidian-v1";
   var COURSE = window.COURSE;
 
-  // ponytail: localStorage only; swap to Firestore when Firebase project exists
+  var activeStorageKey = STORAGE_KEY;
+  var driveNeedsRender = false;
   function save(state) {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      localStorage.setItem(activeStorageKey, JSON.stringify(state));
       storageNotice('');
       return true;
     } catch (e) {
@@ -22,7 +23,7 @@
 
   function load() {
     try {
-      var raw = localStorage.getItem(STORAGE_KEY);
+      var raw = localStorage.getItem(activeStorageKey);
       if (!raw) return { last: null, lessons: {} };
       return parseBackup(raw);
     } catch (e) {
@@ -100,7 +101,7 @@
   // --- 홈 ---
   function renderHome(root) {
     root.appendChild(el("h1", { text: COURSE.title }));
-    root.appendChild(el("p", { class: "note", text: "진도와 메모는 이 브라우저에 저장됩니다. 다른 기기로 옮길 때는 내 기록의 JSON 백업·복원을 사용하세요." }));
+    root.appendChild(el("p", { class: "note", text: "진도와 메모는 이 브라우저에 저장됩니다. 위 Google Drive 메뉴에서 같은 계정으로 연결하면 기기 간에 공유할 수 있습니다." }));
 
     var hasRecord = !!(state.last && findLesson(state.last));
     var startId = hasRecord ? state.last : COURSE.lessons[0].id;
@@ -609,7 +610,7 @@
 
   function renderNotes(root) {
     root.appendChild(el('h1', { text: '내 학습 기록' }));
-    root.appendChild(el('p', { class: 'note', text: '체크와 메모는 현재 브라우저에 저장됩니다. 다른 기기로 옮길 때는 JSON 백업을 받고 복원하세요. Markdown 파일은 읽기·보관용이며 복원할 수 없습니다.' }));
+    root.appendChild(el('p', { class: 'note', text: '체크와 메모는 이 브라우저에 저장됩니다. Google Drive에 연결하면 같은 계정의 기기 사이에 공유됩니다. JSON 백업으로도 옮길 수 있습니다. Markdown 파일은 읽기·보관용이며 복원할 수 없습니다.' }));
     var row = el('div', { class: 'btn-row' });
     row.appendChild(el('button', { type: 'button', text: '학습 기록 Markdown 받기', onclick: function () {
       download('옵시디언-학습기록-' + today() + '.md', exportNotes(), 'text/markdown');
@@ -731,6 +732,26 @@
   }
 
 
+  function refreshFromDrive() {
+    var focused = document.activeElement;
+    if ((focused && ['TEXTAREA', 'INPUT'].includes(focused.tagName)) ||
+        document.querySelector('.restore-panel input[type=file]')?.files?.length) { driveNeedsRender = true; return; }
+    var y = window.scrollY;
+    router(); window.scrollTo(0, y); driveNeedsRender = false;
+  }
+  function setupDrive() {
+    if (!window.StudyDrive) return;
+    window.StudyDrive.start({
+      parse: parseBackup,
+      switchAccount: function (uid) { activeStorageKey = uid ? STORAGE_KEY + ':google:' + uid : STORAGE_KEY; state = load(); router(); },
+      apply: function (remote) {
+        if (JSON.stringify(state.lessons) === JSON.stringify(remote.lessons)) return;
+        state = { last: state.last, lessons: remote.lessons }; save(state); refreshFromDrive();
+      }
+    });
+    document.addEventListener('focusout', function () { if (driveNeedsRender) setTimeout(refreshFromDrive, 0); });
+  }
+
   // --- 라우터 ---
   function router() {
     var root = document.getElementById("app");
@@ -751,5 +772,5 @@
   }
 
   window.addEventListener("hashchange", router);
-  window.addEventListener("DOMContentLoaded", router);
+  window.addEventListener("DOMContentLoaded", function () { router(); setupDrive(); });
 })();
