@@ -1,0 +1,179 @@
+:root {
+  --bg: #fbf4e8;
+  --bg-card: #fffaf0;
+  --text: #2d2a26;
+  --muted: #7a7266;
+  --accent: #6b4fa0;
+  --accent-dark: #52398072;
+  --border: #e4d9c4;
+}
+
+* { box-sizing: border-box; }
+
+html { background: var(--bg); }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", sans-serif;
+  font-size: 18px;
+  line-height: 1.7;
+}
+
+a { color: var(--accent); }
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.site-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  background: var(--bg-card);
+  border-bottom: 2px solid var(--border);
+}
+.site-header .brand {
+  font-weight: 700;
+  font-size: 1.1rem;
+  text-decoration: none;
+  color: var(--text);
+}
+.site-header nav a {
+  margin-left: 1rem;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+#app {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 1.5rem 1.25rem 4rem;
+}
+
+h1 { font-size: 1.6rem; }
+h2 { font-size: 1.25rem; margin-top: 2rem; }
+
+.note { color: var(--muted); font-size: 0.95rem; }
+
+.cta-button {
+  display: inline-block;
+  margin: 1.5rem 0;
+  padding: 1rem 2rem;
+  background: var(--accent);
+  color: #fff;
+  text-decoration: none;
+  border-radius: 10px;
+  font-size: 1.2rem;
+  font-weight: 700;
+}
+.cta-button:hover { background: #5a4089; }
+
+.progress-wrap progress { width: 100%; max-width: 400px; height: 1rem; }
+
+.link { display: inline-block; margin-top: 1rem; }
+
+/* 학습 지도 */
+.stage { margin-bottom: 2rem; }
+.stage-done { color: var(--muted); }
+.lesson-list { list-style: none; padding: 0; margin: 0; }
+.lesson-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.6rem 0.8rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 0.5rem;
+}
+.lesson-list .status { color: var(--muted); font-weight: 600; white-space: nowrap; }
+
+/* 수업 화면 레이아웃 */
+.lesson-layout {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 2rem;
+}
+.lesson-content { max-width: 70ch; order: 1; }
+.lesson-checklist { order: 2; }
+.lesson-toc { order: 3; }
+
+.lesson-toc h3 { font-size: 0.95rem; margin: 1rem 0 0.25rem; }
+.lesson-toc ul { list-style: none; padding: 0; margin: 0 0 0.5rem; }
+.lesson-toc li { padding: 0.2rem 0; font-size: 0.95rem; }
+.lesson-toc .muted { color: var(--muted); }
+
+.terms { margin: 1rem 0; }
+.terms dt { font-weight: 700; margin-top: 0.5rem; }
+.terms dd { margin: 0 0 0.5rem 0; color: var(--muted); }
+
+.video-frame {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.steps { padding-left: 1.2rem; }
+.steps li { margin-bottom: 1rem; }
+
+.example-body {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.btn-row { display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: center; margin-top: 0.5rem; }
+.btn-row button, .btn-row .btn-link {
+  padding: 0.6rem 1.1rem;
+  border-radius: 8px;
+  border: 1px solid var(--accent);
+  background: #fff;
+  color: var(--accent);
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+}
+.btn-row button:hover, .btn-row .btn-link:hover { background: var(--accent); color: #fff; }
+.copy-msg { display: block; margin-top: 0.4rem; color: var(--muted); font-size: 0.9rem; }
+
+.checklist { list-style: none; padding: 0; margin: 0; }
+.checklist li { margin-bottom: 0.6rem; }
+.checklist label { display: flex; gap: 0.5rem; align-items: flex-start; }
+
+details { margin-bottom: 0.75rem; }
+summary { cursor: pointer; font-weight: 600; }
+
+textarea {
+  width: 100%;
+  font: inherit;
+  padding: 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--text);
+}
+label { display: block; font-weight: 600; margin-bottom: 0.4rem; }
+
+.nav-row { margin-top: 1.5rem; justify-content: space-between; }
+
+@media (min-width: 900px) {
+  .lesson-layout {
+    grid-template-columns: 220px minmax(0, 1fr) 260px;
+    align-items: start;
+  }
+  .lesson-toc, .lesson-content, .lesson-checklist { order: 0; }
+  .lesson-toc, .lesson-checklist { position: sticky; top: 1rem; }
+}

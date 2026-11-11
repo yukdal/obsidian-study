@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>차근차근 옵시디언</title>
+<link rel="stylesheet" href="style.css">
+<style>
+.site-header nav { display: flex; flex-wrap: wrap; gap: .5rem 1rem; }
+.site-header nav a { margin-left: 0; }
+.site-header nav a[aria-current="page"] { text-decoration: underline; text-underline-offset: .3em; }
+.btn-row button[aria-pressed="true"] { background: var(--accent); color: white; }
+.record-card, .restore-panel { border: 1px solid var(--border); border-radius: 10px; padding: 1rem; margin: 1.5rem 0; background: var(--bg-card); }
+.record-card h2, .restore-panel h2 { margin-top: 0; }
+.lesson-list li > span:first-child { min-width: 0; overflow-wrap: anywhere; }
+.lesson-list li p { margin: .4rem 0; }
+.storage-notice { max-width: 1100px; margin: 1rem auto; padding: 0 1.25rem; }
+.storage-notice:empty { display: none; }
+input[type="file"] { max-width: 100%; font: inherit; }
+@media (max-width: 600px) { .lesson-list li { flex-direction: column; gap: .25rem; } }
+</style>
+</head>
+<body>
+<header class="site-header">
+  <a href="#/" class="brand">차근차근 옵시디언</a>
+  <nav aria-label="주요 메뉴">
+    <a href="#/">오늘의 학습</a>
+    <a href="#/map">학습 지도</a>
+    <a href="#/settings">내 세팅</a>
+    <a href="#/notes">내 기록</a>
+    <a href="#/resources">자료실</a>
+    <a href="#/glossary">용어집</a>
+  </nav>
+</header>
+<p id="storage-notice" class="storage-notice" role="status"></p>
+<main id="app"></main>
+<script src="lessons.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
