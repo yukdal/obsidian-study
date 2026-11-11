@@ -25,13 +25,15 @@
   }
   function display() {
     if (!panel) return;
+    var wasOpen = panel.children[0] && panel.children[0].open;
     panel.replaceChildren();
     var details = node('details', '', panel);
-    details.open = !!conflicts.length;
+    details.open = !!wasOpen || !!conflicts.length;
     var label = user ? (user.displayName || user.email || '로그인됨') + ' · ' +
       (conflicts.length ? '충돌 확인 필요' : pending.length ? '전송 대기 ' + pending.length + '건' : ready ? '동기화 완료' : '연결 확인 중') : hasConfig() ? '로그인 전' : '연결 설정 전';
     node('summary', '기기 간 동기화 · ' + label, details);
     var message = node('p', status + (queueError ? ' 전송 대기 기록을 저장하지 못했습니다. JSON 백업을 받아 주세요.' : ''), details); message.setAttribute('role', 'status');
+    if (user) node('p', '로그인 전 기록은 따로 보관됩니다. 이 계정으로 옮기려면 로그인 전 기록 가져오기를 눌러 주세요.', details);
     var row = node('div', '', details); row.className = 'btn-row';
     if (!hasConfig()) return;
     if (user) {
