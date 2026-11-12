@@ -38,9 +38,11 @@
   }
 
   function setLessonState(id, patch) {
+    var before = JSON.parse(JSON.stringify(state));
     var cur = getLessonState(id);
     state.lessons[id] = Object.assign({}, cur, patch);
     save(state);
+    if (window.StudyDrive) window.StudyDrive.changed(before, state);
   }
 
   function lessonStatus(id) {
@@ -645,7 +647,9 @@
         buttons.appendChild(el('button', { type: 'button', text: '이 백업으로 현재 기록 교체', onclick: function () {
           if (!pending) return;
           if (!save(pending)) { status.textContent = '저장하지 못해 복원하지 않았습니다. 브라우저 저장 공간을 확인해 주세요.'; return; }
+          var beforeRestore = state;
           state = pending;
+          if (window.StudyDrive) window.StudyDrive.changed(beforeRestore, state);
           pending = null;
           renderNotesAfterRestore();
         } }));
