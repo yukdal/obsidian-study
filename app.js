@@ -22,11 +22,16 @@
   }
 
   function load() {
+    var raw;
+    try { raw = localStorage.getItem(activeStorageKey); } catch (e) { return { last: null, lessons: {} }; }
+    if (!raw) return { last: null, lessons: {} };
     try {
-      var raw = localStorage.getItem(activeStorageKey);
-      if (!raw) return { last: null, lessons: {} };
       return parseBackup(raw);
     } catch (e) {
+      // 전체가 깨져서 읽을 수 없을 때만 여기로 온다(모르는 수업/체크 등은 parseBackup이 조용히 걸러낸다).
+      // 덮어쓰기 전에 원본을 따로 보관해 복구 가능성을 남긴다.
+      try { localStorage.setItem(activeStorageKey + ':unreadable', raw); } catch (e2) {}
+      storageNotice('저장된 기록을 읽지 못해 원본을 "' + activeStorageKey + ':unreadable" 키에 따로 보관했습니다. 필요하면 개발자 도구에서 확인하거나 문의해 주세요.');
       return { last: null, lessons: {} };
     }
   }
@@ -103,7 +108,9 @@
   // --- 홈 ---
   function renderHome(root) {
     root.appendChild(el("h1", { text: COURSE.title }));
-    root.appendChild(el("p", { class: "note", text: "진도와 메모는 이 브라우저에 저장됩니다. 위 Google Drive 메뉴에서 같은 계정으로 연결하면 기기 간에 공유할 수 있습니다." }));
+    root.appendChild(el("p", { class: "note", text: activeStorageKey === STORAGE_KEY ?
+      "진도와 메모는 이 브라우저에 저장됩니다. 위 Google Drive 메뉴에서 같은 계정으로 연결하면 기기 간에 공유할 수 있습니다." :
+      "지금 보는 기록은 연결된 Google 계정의 기록입니다. 자세한 연결 상태는 위 Google Drive 패널에서 확인하세요." }));
 
     var hasRecord = !!(state.last && findLesson(state.last));
     var startId = hasRecord ? state.last : COURSE.lessons[0].id;
@@ -524,6 +531,9 @@
     setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
   }
 
+  // 모르는 것만 버리고 나머지는 살린다: 전체가 객체가 아니거나 lessons가 없거나,
+  // 맞는 수업이 하나도 없을 때만 실패한다(= 완전히 엉뚱한 파일). 그 안에서 모르는 수업 id·
+  // 체크 id, 형식이 틀린 필드는 조용히 걸러내고 나머지 기록은 보존한다.
   function parseBackup(text) {
     if (text.length > 5 * 1024 * 1024) throw new Error('백업 파일은 5MB 이하여야 합니다.');
     var raw = JSON.parse(text);
@@ -535,32 +545,23 @@
     }
     if (!object(raw) || !object(raw.lessons)) throw new Error('수업 기록이 없는 파일입니다.');
     var result = { last: null, lessons: {} };
-    if (raw.last != null) {
-      if (!findLesson(raw.last)) throw new Error('마지막 수업 정보가 올바르지 않습니다.');
-      result.last = raw.last;
-    }
+    if (raw.last != null && findLesson(raw.last)) result.last = raw.last; // 모르는 last → null
+    var validDate = function (d) {
+      if (typeof d !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(d)) return false;
+      var date = new Date(d + 'T00:00:00Z');
+      return !isNaN(date.getTime()) && date.toISOString().slice(0, 10) === d;
+    };
     COURSE.lessons.forEach(function (lesson) {
       if (!Object.prototype.hasOwnProperty.call(raw.lessons, lesson.id)) return;
       var record = raw.lessons[lesson.id];
-      if (!object(record) || (record.checks !== undefined && !object(record.checks)) ||
-          (record.memo !== undefined && typeof record.memo !== 'string') ||
-          (record.done !== undefined && typeof record.done !== 'boolean') ||
-          (record.days !== undefined && !Array.isArray(record.days))) {
-        throw new Error(lesson.no + '번 수업 기록의 형식이 올바르지 않습니다.');
-      }
-      var clean = { checks: {}, memo: record.memo || '', done: record.done === true };
+      if (!object(record)) return; // 레코드 자체가 깨졌으면 이 수업만 제외
+      var clean = { checks: {}, memo: typeof record.memo === 'string' ? record.memo : '', done: record.done === true };
       (lesson.checklist || []).forEach(function (item) {
-        var value = record.checks && record.checks[item.id];
-        if (value !== undefined && typeof value !== 'boolean') throw new Error('실습 체크 형식이 올바르지 않습니다.');
-        if (value !== undefined) clean.checks[item.id] = value;
+        var value = object(record.checks) ? record.checks[item.id] : undefined;
+        if (typeof value === 'boolean') clean.checks[item.id] = value; // 모르는 체크·잘못된 값은 제외
       });
-      if (record.days !== undefined) {
-        if (!record.days.every(function (d) {
-          if (typeof d !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(d)) return false;
-          var date = new Date(d + 'T00:00:00Z');
-          return !isNaN(date.getTime()) && date.toISOString().slice(0, 10) === d;
-        })) throw new Error('기록 날짜가 올바르지 않습니다.');
-        if (lesson.daily) clean.days = Array.from(new Set(record.days)).sort();
+      if (Array.isArray(record.days) && lesson.daily) {
+        clean.days = Array.from(new Set(record.days.filter(validDate))).sort(); // 잘못된 날짜만 제외
       }
       result.lessons[lesson.id] = clean;
     });
@@ -568,6 +569,15 @@
       throw new Error('이 과정에 맞는 수업 기록이 없습니다.');
     }
     return result;
+  }
+
+  // 복원 미리보기용: state에 섞이면 안 되므로 parseBackup과 별도로 원본 수업 개수만 센다.
+  function countRawLessons(text) {
+    try {
+      var raw = JSON.parse(text);
+      if (raw && typeof raw === 'object' && !Array.isArray(raw) && ('version' in raw || 'app' in raw)) raw = raw.state;
+      return raw && typeof raw === 'object' && raw.lessons && typeof raw.lessons === 'object' ? Object.keys(raw.lessons).length : 0;
+    } catch (e) { return 0; }
   }
 
   function renderSettings(root) {
@@ -638,11 +648,14 @@
       status.textContent = '백업 파일을 확인하고 있습니다.';
       try {
         if (file.size > 5 * 1024 * 1024) throw new Error('백업 파일은 5MB 이하여야 합니다.');
-        var parsed = parseBackup(await file.text());
+        var text = await file.text();
+        var parsed = parseBackup(text);
         if (current !== selection) return;
         pending = parsed;
         var done = Object.values(parsed.lessons).filter(function (v) { return v.done; }).length;
-        status.textContent = '백업에 수업 기록 ' + Object.keys(parsed.lessons).length + '개, 완료 ' + done + '개가 있습니다. 아직 현재 기록을 바꾸지 않았습니다.';
+        var skipped = countRawLessons(text) - Object.keys(parsed.lessons).length;
+        status.textContent = '백업에 수업 기록 ' + Object.keys(parsed.lessons).length + '개, 완료 ' + done + '개가 있습니다.' +
+          (skipped > 0 ? ' 이 과정에 없는 항목 ' + skipped + '개는 제외합니다.' : '') + ' 아직 현재 기록을 바꾸지 않았습니다.';
         var buttons = el('div', { class: 'btn-row' });
         buttons.appendChild(el('button', { type: 'button', text: '이 백업으로 현재 기록 교체', onclick: function () {
           if (!pending) return;

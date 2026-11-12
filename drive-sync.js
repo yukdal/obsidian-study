@@ -3,9 +3,51 @@
   var C=window.StudyDriveState,hooks,panel,client;
   var user=null,access='',expires=0,epoch=0,attempt=0,work=null,writeTimer,pollTimer;
   var ops=[],queue=[],draft={},seen=new Set(),status='',persistenceError=false,blocked=false;
+  var LAST_ACCOUNT_KEY='chageun-drive-last-account';
   var empty=function(){return{last:null,lessons:{}};};
   var uuid=function(){return crypto.randomUUID();};
   var key=function(){return 'chageun-drive-replica-v1:'+user.sub;};
+  // sub/email만(토큰 없음) 기억해 새로고침 후에도 어느 계정 기록인지 보여줄 수 있게 한다.
+  function rememberAccount(info){try{localStorage.setItem(LAST_ACCOUNT_KEY,JSON.stringify({sub:info.sub,email:info.email}));}catch(e){}}
+  function forgetAccount(){try{localStorage.removeItem(LAST_ACCOUNT_KEY);}catch(e){}}
+  // 이 기기에 보관된 전송 대기 기록을 읽는다. 지금 과정에 없는 키·op는 버리고 나머지로 복구한다(영구 동기화 실패 방지).
+  function loadReplica(){
+    var raw;try{raw=localStorage.getItem(key());}catch(e){return{ops:[],queue:[],draft:{},seen:[]};}
+    if(!raw)return{ops:[],queue:[],draft:{},seen:[]};
+    try{
+      var saved=JSON.parse(raw);
+      if(!saved||typeof saved!=='object'||!Array.isArray(saved.ops)||!Array.isArray(saved.queue)||!saved.draft||typeof saved.draft!=='object'||Array.isArray(saved.draft)||!Array.isArray(saved.seen))throw Error('shape');
+      var goodBatches=saved.queue.filter(function(b){return b&&/^[\w-]{1,100}$/.test(b.id)&&Array.isArray(b.ops);});
+      var modeled=C.model(saved.ops.concat(goodBatches.flatMap(function(b){return b.ops;})));
+      var keepIds=new Set(modeled.ops.map(function(o){return o.id;}));
+      var cleanQueue=goodBatches.map(function(b){return{id:b.id,ops:b.ops.filter(function(o){return keepIds.has(o.id);})};}).filter(function(b){return b.ops.length;});
+      var cleanDraft={};
+      Object.keys(saved.draft).forEach(function(k){
+        var d=saved.draft[k];
+        if(!d||typeof d!=='object'||!Array.isArray(d.parents))return;
+        try{C.put(empty(),k,d.value);}catch(e){return;} // 모르는 키는 버린다
+        cleanDraft[k]=d;
+      });
+      hooks.parse(JSON.stringify(modeled.state));
+      return{ops:modeled.ops,queue:cleanQueue,draft:cleanDraft,seen:saved.seen.filter(function(s){return typeof s==='string';})};
+    }catch(e){
+      try{localStorage.setItem(key()+':unreadable',raw);}catch(e2){}
+      return{ops:[],queue:[],draft:{},seen:[]};
+    }
+  }
+  // 새로고침 직후(토큰 없음) 기억된 계정이 있으면 그 계정의 로컬 기록을 바로 보여준다.
+  function restoreAccount(){
+    var raw;try{raw=localStorage.getItem(LAST_ACCOUNT_KEY);}catch(e){return;}
+    if(!raw)return;
+    var info;try{info=JSON.parse(raw);}catch(e){return;}
+    if(!info||typeof info.sub!=='string'||!info.sub||typeof info.email!=='string'||!info.email)return;
+    blocked=true;user=info;access='';expires=0;
+    hooks.switchAccount(info.sub);
+    var loaded=loadReplica();
+    ops=loaded.ops;queue=loaded.queue;draft=loaded.draft;seen=new Set(loaded.seen);
+    blocked=false;view();
+    status='계정 기록을 보여 주고 있습니다. 수정한 내용은 이 기기에 보관했다가 다시 연결하면 Drive로 보냅니다.';
+  }
   function store(){
     if(!user)return true;
     try{localStorage.setItem(key(),JSON.stringify({ops:ops,queue:queue,draft:draft,seen:Array.from(seen)}));persistenceError=false;return true;}
@@ -25,10 +67,14 @@
     var open=panel.children[0]&&panel.children[0].open,m=current();panel.replaceChildren();
     var details=node('details','',panel);details.open=!!open||!!m.conflicts.length;
     var connected=user&&access&&Date.now()<expires;
-    node('summary','Google Drive 동기화 · '+(user?user.email+' · '+(connected?'연결됨':'재연결 필요'):'연결 전'),details);
+    node('summary','Google Drive 동기화 · '+(user?user.email+' · '+(connected?'연결됨':'다시 연결 필요'):'연결 전'),details);
     node('p',status+(persistenceError?' 전송 대기 기록 저장에 실패했습니다. JSON 백업을 받아 주세요.':''),details).setAttribute('role','status');
     var row=node('div','',details);row.className='btn-row';
-    if(client)button(connected?'구글 계정 변경':'구글 계정으로 연결',function(){client.requestAccessToken({prompt:'select_account'});},row);
+    if(client){
+      // 다시 연결은 기억된 계정과 같은 계정으로: login_hint로 계정 선택을 건너뛴다(공식 문서: OverridableTokenClientConfig.login_hint).
+      if(user&&!connected)button('다시 연결',function(){client.requestAccessToken({login_hint:user.email});},row);
+      else button(connected?'구글 계정 변경':'구글 계정으로 연결',function(){client.requestAccessToken({prompt:'select_account'});},row);
+    }
     if(user){
       button('지금 동기화',function(){run();},row);
       button('연결 해제',disconnect,row);
@@ -83,9 +129,10 @@
       var result=await api('https://www.googleapis.com/drive/v3/files?'+params,{},session);
       for(var file of result.files||[]){
         if(seen.has(file.id)||!/^obsidian-study-ops-[\w-]+\.json$/.test(file.name))continue;
-        if(Number(file.size)>2000000)throw Error('Drive의 동기화 파일을 확인해 주세요.');
+        // 이 파일 하나가 너무 크거나 형식이 틀려도 다른 기기의 정상 기록까지 막지 않는다: 건너뛰고 seen에 넣어 다시 받지 않는다.
+        if(Number(file.size)>2000000){newIds.push(file.id);continue;}
         var data=await api('https://www.googleapis.com/drive/v3/files/'+encodeURIComponent(file.id)+'?alt=media',{},session);
-        if(data.app!=='chageun-obsidian-sync'||data.version!==1||!Array.isArray(data.ops))throw Error('Drive 기록의 형식이 맞지 않습니다. 덮어쓰지 않았습니다.');
+        if(!data||data.app!=='chageun-obsidian-sync'||data.version!==1||!Array.isArray(data.ops)){newIds.push(file.id);continue;}
         received.push.apply(received,data.ops);newIds.push(file.id);
       }
       token=result.nextPageToken||'';
@@ -138,7 +185,8 @@
   function disconnect(){
     epoch++;attempt++;clearTimeout(writeTimer);clearInterval(pollTimer);
     access='';expires=0;user=null;ops=[];queue=[];draft={};seen=new Set();work=null;blocked=false;
-    hooks.switchAccount(null);status='이 브라우저에 저장합니다. 연결하면 Google Drive로 기록을 공유할 수 있습니다.';render();
+    forgetAccount();
+    hooks.switchAccount(null);status='이 브라우저에 저장합니다. 연결하면 Google Drive로 기록을 공유할 수 있습니다. (이 기기에 남은 계정 기록은 다시 연결하면 다시 보입니다.)';render();
   }
   function importGuest(){
     if(!user||blocked)return;
@@ -165,21 +213,20 @@
       if(mine!==attempt)return;
       epoch++;clearTimeout(writeTimer);clearInterval(pollTimer);work=null;
       user=info;access=response.access_token;expires=Date.now()+Math.max(0,Number(response.expires_in)-30)*1000;blocked=true;
+      rememberAccount(info);
       hooks.switchAccount(info.sub);
       ops=[];queue=[];draft={};seen=new Set();
-      var saved=JSON.parse(localStorage.getItem(key())||'{"ops":[],"queue":[],"draft":{},"seen":[]}');
-      if(!Array.isArray(saved.ops)||!Array.isArray(saved.queue)||!Array.isArray(saved.seen)||!saved.draft||typeof saved.draft!=='object'||Array.isArray(saved.draft))throw Error('이 기기의 대기 기록 형식을 확인하지 못했습니다. JSON 백업을 먼저 보관해 주세요.');
-      C.model(saved.ops.concat(saved.queue.flatMap(function(b){if(!/^[\w-]{1,100}$/.test(b.id)||!Array.isArray(b.ops))throw Error('잘못된 대기 기록');return b.ops;})));
-      var check=empty();Object.keys(saved.draft).forEach(function(k){C.put(check,k,saved.draft[k].value);if(!Array.isArray(saved.draft[k].parents))throw Error('잘못된 대기 기록');});
-      hooks.parse(JSON.stringify(check));
-      ops=saved.ops;queue=saved.queue;draft=saved.draft;seen=new Set(saved.seen);blocked=false;view();render();
+      var loaded=loadReplica();
+      ops=loaded.ops;queue=loaded.queue;draft=loaded.draft;seen=new Set(loaded.seen);blocked=false;view();render();
       pollTimer=setInterval(function(){if(document.visibilityState!=='hidden')run();},20000);
       await run();
     }catch(e){if(mine===attempt){status=e.message;render();}}
   }
   function start(options){
     hooks=options;panel=document.getElementById('drive-panel');
-    status='같은 구글 계정으로 연결하면 Google Drive를 통해 기록을 공유합니다. 새로고침하거나 권한이 만료되면 다시 연결하세요. 기록은 보관됩니다.';render();
+    if(location.protocol!=='file:')restoreAccount();
+    if(!status)status='같은 구글 계정으로 연결하면 Google Drive를 통해 기록을 공유합니다. 새로고침하거나 권한이 만료되면 다시 연결하세요. 기록은 보관됩니다.';
+    render();
     if(location.protocol==='file:'){status='Google Drive 연결은 배포된 웹 주소에서 사용하세요.';render();return;}
     var config=window.GOOGLE_DRIVE_CONFIG;
     if(!config||!config.clientId){status='구글 로그인 연결 설정이 아직 완료되지 않았습니다.';render();return;}

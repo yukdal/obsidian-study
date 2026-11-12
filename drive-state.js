@@ -36,8 +36,10 @@
   function model(ops){
     var all=new Map(),children=new Map(),degree=new Map(),groups=new Map(),removed=new Set();
     ops.forEach(function(o){
-      var p=field(o.key);
-      if(!/^[\w-]{1,100}$/.test(o.id)||!Array.isArray(o.parents)||o.parents.length>1000||!o.parents.every(function(id){return typeof id==='string'&&/^[\w-]{1,100}$/.test(id);})||typeof o.value!==(p[1]==='memo'?'string':'boolean'))throw Error('잘못된 동기화 기록');
+      // 알 수 없는 수업/체크/날짜 키, 형식이 틀린 op는 건너뛴다(예: 나중에 지워진 체크 항목을 가리키는 과거 기록).
+      // 같은 id인데 내용이 다른 op는 변조·손상 신호로 보고 여전히 거부한다(구조적 손상, 아래 순환 참조와 동일한 취급).
+      var p;try{p=field(o.key);}catch(e){return;}
+      if(!/^[\w-]{1,100}$/.test(o.id)||!Array.isArray(o.parents)||o.parents.length>1000||!o.parents.every(function(id){return typeof id==='string'&&/^[\w-]{1,100}$/.test(id);})||typeof o.value!==(p[1]==='memo'?'string':'boolean'))return;
       var clean={id:o.id,key:o.key,parents:Array.from(new Set(o.parents)).sort(),value:o.value};
       if(all.has(o.id)&&JSON.stringify(all.get(o.id))!==JSON.stringify(clean))throw Error('동일 기록 ID의 내용이 다릅니다');
       all.set(o.id,clean);
